@@ -1,0 +1,38 @@
+[project]
+name = "python-web-server-from-scratch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.1.2",
+]
+
+[tool.ruff]
+extend-exclude = ["tests"]
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "double"  # Like Black and PEP
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+"*" = ["T201", "B904"]
+"*/__init__.py" = ["F401"]  # Ignore module imported but unused for __init__.py
+"*/_sql_expression.py" = ["E501"]  # Ignore line too long for _sql_expression.py
+
+[tool.ruff.lint]
+# Lint list by command "ruff linter"
+select = [
+    "N",   # pep8-naming (Compliance with naming conventions)
+    "E",   # pycodestyle (PEP 8)
+    "W",   # pycodestyle (PEP 8 as space, trailing whitespace...)
+    "F",   # Pyflakes (Unused imports and variables. Hidden or erased names. Overridden functions)
+    "UP",  # pyupgrade (Automatic language syntax updates)
+    "B",   # flake8-bugbear (Finding likely bugs and design problems in your program)
+    "SIM", # flake8-simplify (Plugin that helps you to simplify code)
+    "T20", # flake8-print (Check debug print)
+    "I",   # isort (Sorting import)
+]
