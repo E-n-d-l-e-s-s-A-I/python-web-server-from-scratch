@@ -1,0 +1,23 @@
+import socket
+import os
+
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# DNS в этой статье не рассматривается, поэтому используем ip-адрес
+# Актуальный адрес домена host example.com можно посмотреть командой
+# host example.com
+client_socket.connect(("8.6.112.0", 80))
+
+# Получаем номер файлового дескриптора
+fd = client_socket.fileno()
+
+data = b"GET / HTTP/1.0\r\nHost: example.com\r\n\r\n"
+
+# Пишем в сокет, через общий для файловых дескрипторов системный вызов write
+os.write(fd, data)
+
+# Читаем из сокета через системный вызов read
+response = os.read(fd, 4096)
+print(response.decode())
+
+socket.close()

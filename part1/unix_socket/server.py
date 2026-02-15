@@ -22,7 +22,7 @@ print(f"Python: клиент подключился, его адрес: {client_
 
 data = client_socket.recv(1024)
 print("Python: клиент отправил:", data.decode())
-client_socket.sendall(b"Your data processed")
+client_socket.send(b"Your data processed")
 
 client_socket.close()
 server_socket.close()
