@@ -1,5 +1,7 @@
 import select
+import signal
 import socket
+import time
 import traceback
 from collections.abc import Iterator
 
@@ -12,26 +14,48 @@ class TCPServer(TCPServerI):
         host: str,
         port: int,
         handler: TCPHandlerI,
+        poll_interval: float = 0.5,
         client_idle_timeout: float = 5,
+        shutdown_timeout: float = 10,
     ):
         self.address = (host, port)
         self.server_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind(self.address)
 
+        self.poll_interval = poll_interval
         self.client_idle_timeout = client_idle_timeout
-
+        self.shutdown_timeout = shutdown_timeout
         self.handler = handler
+
+        self.is_shutdown = False
+        signal.signal(signal.SIGTERM, self._on_shutdown)
+        signal.signal(signal.SIGINT, self._on_shutdown)
+
+
+    def _on_shutdown(self, signum, _):
+        """Сигнальный обработчик - выставляет флаг завершения."""
+        print("Python: получен сигнал завершения")
+        print("Python: после обработки всех активных запросов сервер будет остановлен")
+        self.is_shutdown = True
 
     def serve_forever(self):
         """Основной цикл сервера: опрашиваем сокет, принимаем и обрабатываем клиентов."""
         self.server_socket.listen()
         print(f"Python: сервер запущен на прослушивание {self.address[0]}:{self.address[1]}")
+        self.is_shutdown = False
 
         with self.server_socket as server_socket:
-            while True:
-                client_socket, addr = server_socket.accept()
-                self._handle_request(client_socket, addr)
+            while not self.is_shutdown:
+                ready, _, _ = select.select(
+                    [server_socket],
+                    [],
+                    [],
+                    self.poll_interval,
+                )
+                if ready:
+                    client_socket, addr = server_socket.accept()
+                    self._handle_request(client_socket, addr)
 
     def _handle_request(self, client_socket: socket.socket, addr):
         """
@@ -64,27 +88,8 @@ class TCPServer(TCPServerI):
         client_socket.close()
         print("Python: закрыл соединение с клиентом")
 
-    def read_client_data(self, client_socket: socket.socket) -> Iterator[bytes]:
-        """Чтение данных клиента."""
+ 
 
-        while True:
-            ready, _, _ = select.select(
-                [client_socket],
-                [],
-                [],
-                self.client_idle_timeout,
-            )
-            if ready:
-                chunk = client_socket.recv(1024)
-            else:
-                print("Python: timeout ожидания клиента")
-                break
-
-            if chunk:
-                yield chunk
-            else:
-                print("Python: клиент прислал (FIN)")
-                break
 
     def send_to_client(self, client_socket: socket.socket, data: Iterator[bytes]):
         """Отправляет данные клиенту."""
