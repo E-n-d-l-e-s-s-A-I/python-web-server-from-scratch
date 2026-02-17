@@ -2,7 +2,6 @@ from final_tcp_server.server import TCPServer
 
 from .handler import WSGIHandler
 
-
 class WSGIServer(TCPServer):
     def __init__(
         self,

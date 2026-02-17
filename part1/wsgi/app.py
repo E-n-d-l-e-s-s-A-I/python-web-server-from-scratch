@@ -25,5 +25,6 @@ def submit():
     return jsonify({"message": f"Hello, {name}!"})
 
 
-server = WSGIServer("0.0.0.0", 9999, app)
-server.serve_forever()
+if __name__ == "__main__":
+    server = WSGIServer("0.0.0.0", 9999, app)
+    server.serve_forever()
