@@ -1,12 +1,13 @@
 import select
 import signal
 import socket
-import time
 import traceback
 from collections.abc import Iterator
+from threading import Event
 
 from .interface import TCPHandlerI, TCPServerI
-
+from .socket_io import SocketIO
+import logging
 
 class TCPServer(TCPServerI):
     def __init__(
@@ -28,24 +29,24 @@ class TCPServer(TCPServerI):
         self.shutdown_timeout = shutdown_timeout
         self.handler = handler
 
-        self.is_shutdown = False
+        self.shutdown_event = Event()
         signal.signal(signal.SIGTERM, self._on_shutdown)
         signal.signal(signal.SIGINT, self._on_shutdown)
 
     def _on_shutdown(self, signum, _):
         """Сигнальный обработчик - выставляет флаг завершения."""
-        print("Python: получен сигнал завершения")
-        print("Python: после обработки всех активных запросов сервер будет остановлен")
-        self.is_shutdown = True
+        logging.warning("Python: получен сигнал завершения")
+        logging.warning("Python: после обработки всех активных запросов сервер будет остановлен")
+        self.shutdown_event.set()
 
     def serve_forever(self):
         """Основной цикл сервера: опрашиваем сокет, принимаем и обрабатываем клиентов."""
         self.server_socket.listen()
-        print(f"Python: сервер запущен на прослушивание {self.address[0]}:{self.address[1]}")
-        self.is_shutdown = False
+        logging.info(f"Python: сервер запущен на прослушивание {self.address[0]}:{self.address[1]}")
+        self.shutdown_event.clear()
 
         with self.server_socket as server_socket:
-            while not self.is_shutdown:
+            while not self.shutdown_event.is_set():
                 ready, _, _ = select.select(
                     [server_socket],
                     [],
@@ -60,7 +61,7 @@ class TCPServer(TCPServerI):
         """
         Обработчик клиентского соединения.
         """
-        print(f"Python: обрабатываю запрос клиента {addr}")
+        logging.debug(f"Python: обрабатываю запрос клиента {addr}")
         try:
             self._process_request(client_socket)
         except Exception:
@@ -72,69 +73,44 @@ class TCPServer(TCPServerI):
         """
         Читает данные клиента и вызывает бизнес-логику из self.handler.
         """
-        client_data = self.read_client_data(client_socket)
-        processed_data = self.handler.handle(client_data)
+        socket_io = SocketIO(
+            socket=client_socket,
+            shutdown_event=self.shutdown_event,
+            poll_interval=self.poll_interval,
+            idle_timeout=self.client_idle_timeout,
+            shutdown_timeout=self.shutdown_timeout,
+        )
+        processed_data = self.handler.handle(socket_io)
         self.send_to_client(client_socket, processed_data)
 
     def shutdown_request(self, client_socket: socket.socket):
         """Закрытие соединения с клиентом, отправка FIN."""
         try:
             client_socket.shutdown(socket.SHUT_WR)
-            print("Python: отправил (FIN) клиенту")
+            logging.debug("Python: отправил (FIN) клиенту")
         except OSError:
             # Если клиент уже закрыл соединение
             pass
         client_socket.close()
-        print("Python: закрыл соединение с клиентом")
-
-    def read_client_data(self, client_socket: socket.socket) -> Iterator[bytes]:
-        """Чтение данных клиента."""
-        deadline = time.perf_counter() + self.client_idle_timeout
-        shutdown_deadline_set = False
-
-        while True:
-            if self.is_shutdown and not shutdown_deadline_set:
-                shutdown_deadline_set = True
-                deadline = time.perf_counter() + self.shutdown_timeout
-
-            if time.perf_counter() > deadline:
-                print("Python: timeout ожидания клиента")
-                break
-
-            ready, _, _ = select.select(
-                [client_socket],
-                [],
-                [],
-                self.poll_interval,
-            )
-            if ready:
-                if not self.is_shutdown:
-                    deadline = time.perf_counter() + self.client_idle_timeout
-
-                chunk = client_socket.recv(1024)
-                if chunk:
-                    yield chunk
-                else:
-                    print("Python: клиент прислал (FIN).")
-                    break
+        logging.debug("Python: закрыл соединение с клиентом")
 
     def send_to_client(self, client_socket: socket.socket, data: Iterator[bytes]):
         """Отправляет данные клиенту."""
-        print("Python: отправляю ответ клиенту")
+        logging.debug("Python: отправляю ответ клиенту")
         for chunk in data:
             try:
                 client_socket.sendall(chunk)
             except OSError:
-                print("Python: клиент закрыл соединение до получения данных")
+                logging.debug("Python: клиент закрыл соединение до получения данных")
 
     def handle_error(self, client_socket, addr):
         """Обработка ошибок во время выполнения запроса."""
-        print(f"Python: произошла ошибка во время обработки запроса клиента {addr}")
+        logging.error(f"Python: произошла ошибка во время обработки запроса клиента {addr}")
         traceback.print_exc()
 
 
 class TCPEchoHandler(TCPHandlerI):
-    def handle(self, data: Iterator[bytes]) -> Iterator[bytes]:
+    def handle(self, data: SocketIO) -> Iterator[bytes]:
         return data
 
 
