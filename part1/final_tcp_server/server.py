@@ -1,3 +1,4 @@
+import logging
 import select
 import signal
 import socket
@@ -7,7 +8,7 @@ from threading import Event
 
 from .interface import TCPHandlerI, TCPServerI
 from .socket_io import SocketIO
-import logging
+
 
 class TCPServer(TCPServerI):
     def __init__(

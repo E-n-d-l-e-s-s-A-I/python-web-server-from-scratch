@@ -1,9 +1,10 @@
 import io
+import logging
 import select
 import socket
 import time
 from threading import Event
-import logging
+
 
 class SocketIO(io.RawIOBase):
     def __init__(
