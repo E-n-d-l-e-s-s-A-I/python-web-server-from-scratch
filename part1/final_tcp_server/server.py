@@ -56,6 +56,7 @@ class TCPServer(TCPServerI):
                 )
                 if ready:
                     client_socket, addr = server_socket.accept()
+                    client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._handle_request(client_socket, addr)
 
     def _handle_request(self, client_socket: socket.socket, addr):

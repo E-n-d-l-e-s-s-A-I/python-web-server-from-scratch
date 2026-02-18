@@ -45,5 +45,5 @@ def page():
 if __name__ == "__main__":
     server = WSGIServer("0.0.0.0", 9999, app)
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     server.serve_forever()

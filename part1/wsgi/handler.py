@@ -22,29 +22,38 @@ class WSGIHandler(TCPHandlerI):
         self.host = host
 
     def handle(self, data: SocketIO) -> Iterator[bytes]:
-        try:
-            http_request = self._parse_http_request(data)
-        except Exception:
-            status, headers_list = "400 Bad Request", [("Content-Type", "text/plain")]
-            body_iterator = [b"400 Bad Request"]
-            return self._generate_http_response(status, headers_list, body_iterator)
 
-        environ = self._generate_environ(http_request)
-        response_headers = []
+        while True:
+            try:
+                http_request = self._parse_http_request(data)
+            except Exception:
+                status, headers_list = "400 Bad Request", [("Content-Type", "text/plain")]
+                body_iterator = [b"400 Bad Request"]
+                response = self._generate_http_response(
+                    status,
+                    headers_list,
+                    body_iterator,
+                    connection_close=True,
+                )
+                yield from response
+                break
 
-        def start_response(status, headers_list):
-            response_headers.extend([status, headers_list])
+            environ = self._generate_environ(http_request)
+            response_headers = []
 
-        # Вызываем WSGI-приложение
-        try:
-            body_iterator = self.app(environ, start_response)
-            status, headers_list = response_headers
-        except Exception as e:
-            print(e)
-            status, headers_list = "500 Internal Server Error", [("Content-Type", "text/plain")]
-            body_iterator = [b"Internal Server Error"]
+            def start_response(status, headers_list):
+                response_headers.extend([status, headers_list])
 
-        return self._generate_http_response(status, headers_list, body_iterator)
+            # Вызываем WSGI-приложение
+            try:
+                body_iterator = self.app(environ, start_response)
+                status, headers_list = response_headers
+            except Exception:
+                status, headers_list = "500 Internal Server Error", [("Content-Type", "text/plain")]
+                body_iterator = [b"Internal Server Error"]
+
+            response = self._generate_http_response(status, headers_list, body_iterator)
+            yield from response
 
     def _parse_http_request(self, request: SocketIO) -> HTTPRequest:
         """Упрощенный парсинг http-запроса."""
@@ -109,6 +118,7 @@ class WSGIHandler(TCPHandlerI):
         status: str,
         headers_list: list[tuple[str, str]],
         body_iterator: Iterator[bytes],
+        connection_close: bool = False,
     ) -> Iterator[bytes]:
         """Формируем HTTP-ответ."""
         # Сначала собираем тело в память, чтобы посчитать Content-Length
@@ -118,6 +128,9 @@ class WSGIHandler(TCPHandlerI):
         response_lines = [f"HTTP/1.1 {status}"]
         for k, v in headers_list:
             response_lines.append(f"{k}: {v}")
+        if connection_close:
+            response_lines.append("Connection: close")
+
         # "\r\n\r\n" перед телом
         response_lines.append("")
         response_lines.append("")
