@@ -1,4 +1,5 @@
 import io
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -26,6 +27,8 @@ class WSGIHandler(TCPHandlerI):
         while True:
             try:
                 http_request = self._parse_http_request(data)
+            except ConnectionError:
+                break
             except Exception:
                 status, headers_list = "400 Bad Request", [("Content-Type", "text/plain")]
                 body_iterator = [b"400 Bad Request"]
@@ -59,6 +62,9 @@ class WSGIHandler(TCPHandlerI):
         """Упрощенный парсинг http-запроса."""
         # Парсим request line
         request_line = request.readline()
+        if not request_line:
+            raise ConnectionError("Клиент закрыл соединение")
+
         try:
             method, path, protocol = request_line.decode("ascii").strip().split()
         except ValueError:
@@ -103,7 +109,7 @@ class WSGIHandler(TCPHandlerI):
             "wsgi.version": (1, 0),
             "wsgi.url_scheme": "http",
             "wsgi.input": http_request.body,
-            "wsgi.errors": None,
+            "wsgi.errors": sys.stderr,
             "wsgi.multithread": False,
             "wsgi.multiprocess": False,
             "wsgi.run_once": False,
@@ -121,16 +127,21 @@ class WSGIHandler(TCPHandlerI):
         connection_close: bool = False,
     ) -> Iterator[bytes]:
         """Формируем HTTP-ответ."""
-        # Сначала собираем тело в память, чтобы посчитать Content-Length
-        body_chunks = list(body_iterator)
-
         # Формируем заголовки
+        content_length_is_set = False
         response_lines = [f"HTTP/1.1 {status}"]
         for k, v in headers_list:
             response_lines.append(f"{k}: {v}")
+            if k.lower() == "content-length":
+                content_length_is_set = True
+        if not content_length_is_set:
+            body_iterator = list(body_iterator)
+            content_length = sum(len(chunk) for chunk in body_iterator)
+            response_lines.append(f"Content-Length: {content_length}")
+
         if connection_close:
             response_lines.append("Connection: close")
-
+        
         # "\r\n\r\n" перед телом
         response_lines.append("")
         response_lines.append("")
@@ -138,4 +149,4 @@ class WSGIHandler(TCPHandlerI):
         # yield заголовков
         yield ("\r\n".join(response_lines).encode("iso-8859-1"))
         # yield тела
-        yield from body_chunks
+        yield from body_iterator
