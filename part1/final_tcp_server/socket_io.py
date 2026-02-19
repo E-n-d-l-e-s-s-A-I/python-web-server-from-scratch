@@ -20,8 +20,8 @@ class SocketIO(io.RawIOBase):
         self.idle_timeout = idle_timeout
         self.shutdown_timeout = shutdown_timeout
 
-        # В буфере будем сохранять прочитанные из сокета байты
-        # Но еще не прочитанные через read
+        # Внутренний буфер: recv() может вернуть больше данных, чем запросил read(size).
+        # Остаток сохраняется здесь до следующего вызова read().
         self.buffer = bytearray()
 
         self.deadline = time.perf_counter() + self.idle_timeout
@@ -31,17 +31,24 @@ class SocketIO(io.RawIOBase):
         self.is_socket_end = False
 
     def _recv(self, chunk_size: int) -> bytes:
-        """Читаем из сокета chunk_size байтов."""
+        """
+        Низкоуровневое чтение из сокета с поддержкой таймаутов.
+        Возвращает до chunk_size байт или b"" если соединение закрыто.
+        """
         if self.is_socket_end:
             return b""
 
         while True:
+            # При получении сигнала завершения переключаемся на shutdown_timeout
             if self.shutdown_event.is_set() and not self.shutdown_deadline_set:
                 self.deadline = time.perf_counter() + self.shutdown_timeout
                 self.shutdown_deadline_set = True
 
+            # Ждём готовности сокета не дольше poll_interval,
+            # чтобы периодически проверять таймауты и флаг завершения
             ready, _, _ = select.select([self.socket], [], [], self.poll_interval)
             if ready:
+                # Клиент прислал данные - сбрасываем idle-таймаут
                 if not self.shutdown_deadline_set:
                     self.deadline = time.perf_counter() + self.idle_timeout
 
@@ -59,18 +66,20 @@ class SocketIO(io.RawIOBase):
                 raise TimeoutError("Клиент слишком долго отправлял данные")
 
     def read(self, size=-1) -> bytes:
-        """Возвращает size байт из сокета."""
+        """
+        Возвращает ровно size байт из сокета (или меньше, если соединение закрыто).
+        При size < 0 читает всё до конца соединения.
+        """
 
         if size < 0:
-            # читаем всё
+            # Режим "читаем всё": забираем буфер и дочитываем сокет до конца
             chunks = [bytes(self.buffer)]
             self.buffer = bytearray()
             while chunk := self._recv(1024):
-                if not chunk:
-                    break
                 chunks.append(chunk)
             return b"".join(chunks)
         else:
+            # Режим "читаем ровно size байт": дочитываем в буфер, пока не наберём нужное количество
             while len(self.buffer) < size:
                 chunk = self._recv(size - len(self.buffer))
                 if not chunk:
@@ -89,7 +98,13 @@ class SocketIO(io.RawIOBase):
         return n
 
     def readline(self, size=-1) -> bytes:
-        """Возвращает строку, лимит количества прочитанных байт задается через size."""
+        """
+        Читает одну строку (до символа \\n включительно).
+        Побайтовое чтение через read(1) — не самый эффективный способ,
+        но корректный: мы не рискуем "проскочить" конец строки и захватить
+        данные следующего запроса. Production-серверы используют BufferedReader
+        для снижения накладных расходов.
+        """
         line = bytearray()
         while size < 0 or len(line) < size:
             c = self.read(1)
@@ -101,7 +116,7 @@ class SocketIO(io.RawIOBase):
         return bytes(line)
 
     def readlines(self, hint=-1) -> list[bytes]:
-        """Возвращает строки, лимит количества прочитанных байт задается через hint."""
+        """Возвращает строки, лимит количества прочитанных байт задаётся через hint."""
         lines = []
         total = 0
         while True:
