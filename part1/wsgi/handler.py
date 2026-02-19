@@ -141,7 +141,7 @@ class WSGIHandler(TCPHandlerI):
 
         if connection_close:
             response_lines.append("Connection: close")
-        
+
         # "\r\n\r\n" перед телом
         response_lines.append("")
         response_lines.append("")

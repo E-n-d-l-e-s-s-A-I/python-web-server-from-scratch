@@ -14,11 +14,13 @@ class SocketIO(io.RawIOBase):
         poll_interval: float = 0.5,
         idle_timeout: float = 5,
         shutdown_timeout: float = 10,
+        recv_chunk_size: int = 1024,
     ):
         self.socket = socket
         self.poll_interval = poll_interval
         self.idle_timeout = idle_timeout
         self.shutdown_timeout = shutdown_timeout
+        self.recv_chunk_size = recv_chunk_size
 
         # Внутренний буфер: recv() может вернуть больше данных, чем запросил read(size).
         # Остаток сохраняется здесь до следующего вызова read().
@@ -75,13 +77,13 @@ class SocketIO(io.RawIOBase):
             # Режим "читаем всё": забираем буфер и дочитываем сокет до конца
             chunks = [bytes(self.buffer)]
             self.buffer = bytearray()
-            while chunk := self._recv(1024):
+            while chunk := self._recv(self.recv_chunk_size):
                 chunks.append(chunk)
             return b"".join(chunks)
         else:
             # Режим "читаем ровно size байт": дочитываем в буфер, пока не наберём нужное количество
             while len(self.buffer) < size:
-                chunk = self._recv(size - len(self.buffer))
+                chunk = self._recv(self.recv_chunk_size)
                 if not chunk:
                     break
                 self.buffer.extend(chunk)
@@ -100,20 +102,34 @@ class SocketIO(io.RawIOBase):
     def readline(self, size=-1) -> bytes:
         """
         Читает одну строку (до символа \\n включительно).
-        Побайтовое чтение через read(1) — не самый эффективный способ,
-        но корректный: мы не рискуем "проскочить" конец строки и захватить
-        данные следующего запроса. Production-серверы используют BufferedReader
-        для снижения накладных расходов.
+        Сначала ищем \\n в буфере, если не нашли - дочитываем из сокета чанками.
         """
-        line = bytearray()
-        while size < 0 or len(line) < size:
-            c = self.read(1)
-            if not c:
-                break
-            line.extend(c)
-            if c == b"\n":
-                break
-        return bytes(line)
+        while True:
+            # Ищем конец строки в том, что уже есть в буфере
+            newline_pos = self.buffer.find(b"\n")
+            if newline_pos != -1:
+                # Нашли \n - отдаём строку включая \n, остаток остаётся в буфере
+                end = newline_pos + 1
+                if size >= 0:
+                    end = min(end, size)
+                line = bytes(self.buffer[:end])
+                self.buffer = self.buffer[end:]
+                return line
+
+            # Если достигли лимита size - отдаём что есть
+            if size >= 0 and len(self.buffer) >= size:
+                line = bytes(self.buffer[:size])
+                self.buffer = self.buffer[size:]
+                return line
+
+            # \n не найден - дочитываем из сокета
+            chunk = self._recv(self.recv_chunk_size)
+            if not chunk:
+                # Соединение закрыто - отдаём остаток буфера
+                line = bytes(self.buffer)
+                self.buffer = bytearray()
+                return line
+            self.buffer.extend(chunk)
 
     def readlines(self, hint=-1) -> list[bytes]:
         """Возвращает строки, лимит количества прочитанных байт задаётся через hint."""
