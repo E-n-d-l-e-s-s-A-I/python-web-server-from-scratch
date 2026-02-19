@@ -26,6 +26,8 @@ part1/
 ### Запуск
 
 ```bash
+cd part1
+
 # Зависимости
 uv sync
 
