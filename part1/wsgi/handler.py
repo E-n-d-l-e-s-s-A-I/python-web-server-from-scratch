@@ -30,7 +30,10 @@ class WSGIHandler(TCPHandlerI):
             except ConnectionError:
                 break
             except Exception:
-                status, headers_list = "400 Bad Request", [("Content-Type", "text/plain")]
+                status, headers_list = (
+                    "400 Bad Request",
+                    [("Content-Type", "text/plain")],
+                )
                 body_iterator = [b"400 Bad Request"]
                 response = self._generate_http_response(
                     status,
@@ -52,10 +55,17 @@ class WSGIHandler(TCPHandlerI):
                 body_iterator = self.app(environ, start_response)
                 status, headers_list = response_headers
             except Exception:
-                status, headers_list = "500 Internal Server Error", [("Content-Type", "text/plain")]
+                status, headers_list = (
+                    "500 Internal Server Error",
+                    [("Content-Type", "text/plain")],
+                )
                 body_iterator = [b"Internal Server Error"]
 
-            response = self._generate_http_response(status, headers_list, body_iterator)
+            response = self._generate_http_response(
+                status,
+                headers_list,
+                body_iterator,
+            )
             yield from response
 
     def _parse_http_request(self, request: SocketIO) -> HTTPRequest:

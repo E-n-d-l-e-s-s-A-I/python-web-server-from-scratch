@@ -13,16 +13,25 @@ class TCPServer(TCPServerI):
         handler: TCPHandlerI,
     ):
         self.address = (host, port)
-        self.server_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
+        self.server_socket = socket.socket(
+            family=socket.AF_INET,
+            type=socket.SOCK_STREAM,
+        )
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind(self.address)
 
         self.handler = handler
 
     def serve_forever(self):
-        """Основной цикл сервера: опрашиваем сокет, принимаем и обрабатываем клиентов."""
+        """
+        Основной цикл сервера: опрашиваем сокет,
+        принимаем и обрабатываем клиентов.
+        """
         self.server_socket.listen()
-        print(f"Python: сервер запущен на прослушивание {self.address[0]}:{self.address[1]}")
+        print(
+            "Python: сервер запущен на прослушивание "
+            f"{self.address[0]}:{self.address[1]}"
+        )
 
         with self.server_socket as server_socket:
             while True:
@@ -82,7 +91,10 @@ class TCPServer(TCPServerI):
 
     def handle_error(self, client_socket, addr):
         """Обработка ошибок во время выполнения запроса."""
-        print(f"Python: произошла ошибка во время обработки запроса клиента {addr}")
+        print(
+            "Python: произошла ошибка во время "
+            f"обработки запроса клиента {addr}"
+        )
         traceback.print_exc()
 
 

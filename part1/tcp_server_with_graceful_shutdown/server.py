@@ -35,7 +35,10 @@ class TCPServer(TCPServerI):
     def _on_shutdown(self, signum, _):
         """Сигнальный обработчик - выставляет флаг завершения."""
         print("Python: получен сигнал завершения")
-        print("Python: после обработки всех активных запросов сервер будет остановлен")
+        print(
+            "Python: после обработки всех активных "
+            "запросов сервер будет остановлен"
+        )
         self.is_shutdown = True
 
     def serve_forever(self):
